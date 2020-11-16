@@ -1,6 +1,6 @@
-= Test Artemis broker failover with SpringBoot and Qpid JMS
+= Test Artemis broker failover with Fuse and Qpid JMS
 
-This example tests an HA broker failover while a SpringBoot application actively receives and sends messags to the broker. 
+This example tests an HA broker failover while a Fuse application actively receives and sends messags to the broker.
 On the client side we use the Qpid JMS client for Artemis AMQP endpoint.
 
 To run the example we need Apache Artemis donwloaded and set its path in the `activemq.basedir` propety for Maven. For example:
@@ -9,7 +9,7 @@ To run the example we need Apache Artemis donwloaded and set its path in the `ac
 
 Then we can run the test - with sending the log into `out.log` - like this (see `run.sh`):
 ```
-export "MAVEN_OPTS=-Dorg.slf4j.simpleLogger.log.org.apache.activemq.artemis.jms.example=info"
+export "MAVEN_OPTS=-Dorg.slf4j.simpleLogger.log.bszeti.artemis.test=info"
 export "MAVEN_OPTS=$MAVEN_OPTS -Dorg.slf4j.simpleLogger.showDateTime=true -Dorg.slf4j.simpleLogger.showThreadName=true"
 export "MAVEN_OPTS=$MAVEN_OPTS -Dorg.slf4j.simpleLogger.logFile=out.log"
 mvn clean install -Dactivemq.basedir=$ARTEMIS_HOME
@@ -38,7 +38,7 @@ Steps:
 - The application is shut down when no more messages are received from `source`. Before that messages are counted on the queues.
 
 Expected outcome:
-- All the messages are moved to the `target` queue witohut message loss or duplicates.
+- All the messages are moved to the `target` queue without message loss or duplicates.
 
 See `application.properties` for parameters:
 
@@ -51,7 +51,8 @@ See `application.properties` for parameters:
 |connection.maxConnections    |1        |Pool size
 |send.count                   |1000     |Message count
 |send.enabled                 |true     |Send messages to `source` queue
-|transaction.mode             |DEFAULT_MESSAGE_LISTENER_CONTAINER or JMS_TRANSACTION_MANAGER| See modes below
+|send.message                 |#{'$'}{header.UUID} - #{'$'}{header.SEND_COUNTER}|Exception is thrown if contains `error`
+|transaction.mode             |NO_TRANSACTION_MANAGER or LAZY_TRANSACTION_MANAGER or TRANSACTION_MANAGER_WITH_PROPAGATION| See modes below
 |receive.enabled              |true     |Receive messages from source queue
 |receive.concurrentConsumers  |20       |Consumers
 |receive.forwardEnable        |true     |Forward messaged to `target` queue
@@ -59,48 +60,47 @@ See `application.properties` for parameters:
 |receive.throwException       |false    |Throw exception during message - test transactions
 |receive.delayBeforeForward   |0        |Optional delay (ms)
 |receive.delayBeforeDone      |0        |Optional delay (ms)
-|receive.cacheLevel           |CACHE_NONE or CACHE_CONSUMER| Only for JMS_TRANSACTION_MANAGER
-|brokerFailover               |true     |Do broker failover during test
-|counterUpdate                |1000     |Log counters frequency (ms)
+|receive.cacheLevel           |CACHE_NONE or CACHE_CONSUMER|
+|receive.brokerFailover       |true     |Do broker failover during test
 |shutDownDelay                |10000    |Wait before shutdown (ms)
 |===
 
 
 See summary output of the application:
 ```
-17252 [main] [INFO] TransactionFailoverSpringBoot - Message count before listener start - sent: 1000, received: 0, forwarded: 0
-19486 [main] [INFO] TransactionFailoverSpringBoot - Message count after failover - sent: 1000, received: 125, forwarded: 119
-34661 [main] [INFO] TransactionFailoverSpringBoot - Message count at the end - sent: 1000, received: 1015, forwarded: 1015
-34661 [main] [INFO] TransactionFailoverSpringBoot - Message count on source queue: 0
-34661 [main] [INFO] TransactionFailoverSpringBoot - Message count on target queue: 1000
-34661 [main] [WARNING] TransactionFailoverSpringBoot - Message count on DLQ - duplicates: 6
+25784 [main] [INFO] TransactionFailoverFuse - Message count before listener start - sent: 1000, received: 0, forwarded: 0
+28649 [main] [INFO] TransactionFailoverFuse - Message count after failover - sent: 1000, received: 111, forwarded: 111
+50651 [main] [INFO] TransactionFailoverFuse - Message count at the end - sent: 1000, received: 1000, forwarded: 1000
+50651 [main] [INFO] TransactionFailoverFuse - Message count on source queue: 0
+50651 [main] [INFO] TransactionFailoverFuse - Message count on target queue: 999
+50651 [main] [WARNING] TransactionFailoverFuse - Message count on DLQ queue: 0
 ```
 
 The missing or DLQ message ids are also logged with their UUID and order number:
 ```
-34658 [main] [INFO] TransactionFailoverSpringBoot - Message in DLQ: 5e213243-d579-4db7-9ef3-a5233e3fad63 - 128
-34658 [main] [INFO] TransactionFailoverSpringBoot - Message missing:: bd1ec840-909d-41db-a51a-e160d83a09b5 - 129
+34658 [main] [INFO] TransactionFailoverFuse - Message in DLQ: 5e213243-d579-4db7-9ef3-a5233e3fad63 - 128
+34658 [main] [INFO] TransactionFailoverFuse - Message missing:: bd1ec840-909d-41db-a51a-e160d83a09b5 - 129
 ```
 
 The example application creates and starts two Artemis server instances by default under `target/server0` and `target/server1` directories. Use the _noServer_ Maven profile (`mvn -PnoSever clean install`) to skip this, so you need to start one or two a broker instances yourself.
 
 == Different scenarios to try
 
-Some issues were found with all of these settings. It's not clear how the expected outcome could be achieved with Spring framework and Qpid JMS client.
+Some issues were found with all of these settings. It's not clear how the expected outcome could be achieved with Qpid JMS client.
 
 [NOTE]
 ====
-Using Artemis Core protocol seems to solve the issues described below. `connection.type=CORE`
+Using Artemis Core protocol seems to solve some of the issues described below. `connection.type=CORE`
 ====
 
 === Default DefaultMessageListenerContainer
 ```
-transaction.mode = DEFAULT_MESSAGE_LISTENER_CONTAINER
+transaction.mode = NO_TRANSACTION_MANAGER
+receive.cacheLevel = CACHE_CONSUMER
 ```
 Notes:
 
-* No TransactionManager is used. Transactions are managed by the `DefaultMessageListenerContainer`
-* `receive.cacheLevel` is ignored in this case, but it's automatically set to `CACHE_CONSUMER`
+* No TransactionManager is used. Transactions are managed by Spring's `DefaultMessageListenerContainer`
 * Receive: A transacted JMS session is created and cached by DefaultMessageListenerContainer.
 * Send: Send is using the same session as receive.
 
@@ -110,16 +110,15 @@ Outcome:
 * Many errors and retries based on the logs
 * Sometimes the test execution takes much longer, it had to wait for transaction timeouts on the broker side probably
 
-=== TransactionManager with no caching
+=== Auto-created TransactionManager without caching
 ```
-transaction.mode = JMS_TRANSACTION_MANAGER
+transaction.mode = LAZY_TRANSACTION_MANAGER
 receive.cacheLevel = CACHE_NONE
 ```
 
 Notes:
 
-* A TransactionManager is created and used by the `DefaultMessageListenerContainer`
-* CACHE_AUTO also means CACHE_NONE by default if a TransactionManager is set
+* A TransactionManager is created and used automatically
 * Receive: The new transacted JMS session is created by TransactionManager for each message.
 * Send: Send uses the same - transacted - session as receive
 
@@ -131,16 +130,34 @@ Outcome:
 
 === TransactionManager with caching
 ```
-transaction.mode = JMS_TRANSACTION_MANAGER
+transaction.mode = LAZY_TRANSACTION_MANAGER
 receive.cacheLevel = CACHE_CONSUMER
 ```
 
 Notes:
 
-* A TransactionManager is created and used by the `DefaultMessageListenerContainer`
+* A TransactionManager is created and used automatically
+* Consumers are cached to increase performance
 * Receive: A JMS session is created and cached by DefaultMessageListenerContainer for all receives. Receive is only transacted if `DefaultJmsListenerContainerFactory.setSessionTransacted(true)`.
 * Send: Another (transacted) JMS session from the TransactionManager is used - from JmsTemplate. So the send and receive is not done in the same JMS session - nor in the same transaction
 
 Outcome:
 
 * Message loss during failover.
+* Rare message loss was observed even with the CORE protocol
+
+=== TransactionManager with non-transacted send
+```
+transaction.mode = TRANSACTION_MANAGER_WITH_PROPAGATION
+receive.cacheLevel = CACHE_CONSUMER
+transaction.propagation = PROPAGATION_NOT_SUPPORTED
+```
+
+Notes:
+
+* Manually created TransactionManager
+* TransactionPolicy is created with PROPAGATION_NOT_SUPPORTED so the send doesn't participate in the transaction.
+
+Outcome:
+
+* No message loss, no DLQ messages.

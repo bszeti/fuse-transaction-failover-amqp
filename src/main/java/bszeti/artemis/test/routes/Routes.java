@@ -1,11 +1,9 @@
-package bszeti.artemis.test;
+package bszeti.artemis.test.routes;
 
-import java.text.MessageFormat;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.beans.ExceptionListener;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.atomic.AtomicInteger;
 
+import bszeti.artemis.test.Counter;
 import org.apache.camel.LoggingLevel;
 import org.apache.camel.ThreadPoolRejectedPolicy;
 import org.apache.camel.builder.RouteBuilder;
@@ -25,13 +23,6 @@ public class Routes extends RouteBuilder {
     @Autowired
     CountDownLatch sendThreadsCountDown;
 
-
-    @Value("${receive.enabled}")
-    Boolean receiveEnabled;
-
-    @Value("${send.enabled}")
-    Boolean sendEnabled;
-
     @Value("${send.threads}")
     int sendThreads;
 
@@ -47,22 +38,27 @@ public class Routes extends RouteBuilder {
 
         onException(Exception.class)
             .maximumRedeliveries("{{exception.maximumredeliveries}}")
-            .log(LoggingLevel.ERROR,"Camel onException: ${exception}")
+            .log(LoggingLevel.ERROR,"Camel onException: ${exception} ")
         ;
 
         // Receive messages and optionally forward them to another queue
         // If message body contains "error" an exception is thrown (before forwarding)
         // The consumer can have transacted=true, then the rest of the route uses transaction policy receive.forward.propagation. This is to test different scenarios for the forwarding. Default is PROPAGATION_REQUIRED
-        from("{{receive.endpoint}}")
-            .routeId("receive").autoStartup(false)
-//            .transacted("jmsSendTransaction")
+        from("direct:doReceive")
+            .routeId("doReceive")
 
-            .log(LoggingLevel.DEBUG, log, "Received:  ${exchangeId} - ${header.UUID} - ${header.SEND_COUNTER}")
+            .log(LoggingLevel.DEBUG, log, "Received: ${header.UUID} - ${header.SEND_COUNTER}")
             .setHeader("receiveCounter").exchange(e->counter.getReceiveCounter().incrementAndGet())
+            .script().message(m->{
+                if (counter.getReceivedUUIDs().put(m.getHeader("UUID",String.class),m.getHeader("receiveCounter",String.class)) != null) {
+                    log.warn("Received again: {} - {}", m.getHeader("UUID"), m.getHeader("receiveCounter"));
+                }
+                return null;
+            })
 
             .choice()
                 .when(simple("${body} contains 'error' "))
-                .throwException(new Exception("error"))
+                .throwException(Exception.class, "error - ${header.UUID}")
             .end()
 
 
@@ -80,13 +76,13 @@ public class Routes extends RouteBuilder {
             .end()
 
             .delay(constant("{{receive.delayBeforeDone}}"))
-            .log(LoggingLevel.DEBUG, log, "Processed: ${header.UUID} - ${header.SEND_COUNTER}")
+            .log(LoggingLevel.DEBUG, log, "Done: ${header.UUID} - ${header.SEND_COUNTER}")
         ;
 
 
 
 
-        // Send messages -  send.threads X send.count
+        // Send messages -  send.threads * send.count
         // Message body is from property send.message. For example a simple expression: #{'$'}{exchangeId}/#{'$'}{header.CamelLoopIndex}
         // Add a UUID header. Use send.headeruuid=_AMQ_DUPL_ID for Artemis duplicate detection.
         from("timer:sender?period=1&repeatCount={{send.threads}}")

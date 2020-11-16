@@ -88,37 +88,17 @@ public class TransactionFailoverFuse implements CommandLineRunner {
    @Value("${target.queue}")
    String targetQueue;
 
-   @Value("${send.count}")
-   Integer sendCount;
-
    @Value("${send.enabled}")
    Boolean sendEnabled;
 
    @Value("${receive.enabled}")
    Boolean receiveEnabled;
 
-   @Value("${receive.forwardEnabled}")
-   Boolean receiveForwardEnabled;
-
-   @Value("${receive.delayBeforeForward}")
-   Integer delayBeforeForward;
-
-   @Value("${receive.delayBeforeDone}")
-   Integer delayBeforeDone;
-
-
-
-   @Value("${receive.throwException}")
-   Boolean throwException;
-
    @Value("${receive.brokerFailover}")
    Boolean brokerFailover;
 
    @Value("${shutDownDelay}")
    Integer shutDownDelay;
-
-   @Autowired
-   RouteBuilder routeBuilder;
 
    @Autowired
    CamelContext camelContext;
@@ -162,9 +142,9 @@ public class TransactionFailoverFuse implements CommandLineRunner {
 
 
             //Wait until we received all of messages, and no more was incoming in the last second
-//            while (counter.getReceiveCounter().get() < sendCount || counter.getReceiveCounter().get() > counter.getReceiveCounterLast()) {
-//               Thread.sleep(1000);
-//            }
+            while (counter.getReceiveCounter().get() < counter.getSendCounter().get() || counter.getReceiveCounter().get() > counter.getReceiveCounterLast()) {
+               Thread.sleep(1000);
+            }
 
             //Wait some before shutdown
             Thread.sleep(shutDownDelay);
@@ -181,17 +161,25 @@ public class TransactionFailoverFuse implements CommandLineRunner {
          }
 
          //Check successfully arrived messages
-         int targetCount = jmsTemplate.browse(targetQueue, (Session session, QueueBrowser browser) ->{
-            Enumeration enumeration = browser.getEnumeration();
-            int counter = 0;
-            while (enumeration.hasMoreElements()) {
-               Message message = (Message) enumeration.nextElement();
-               counter += 1;
-               String uuid = message.getStringProperty("UUID");
-               this.counter.sentUUIDs.remove(uuid);
-            }
-            return counter;
-         });
+         int targetCount = 0;
+         while((msg = jmsTemplate.receive(targetQueue)) != null) {
+            targetCount++;
+            String uuid = msg.getStringProperty("UUID");
+            this.counter.sentUUIDs.remove(uuid);
+         }
+
+         //Browse may not give back the exact number - but leaving here for reference
+//         int targetCount = jmsTemplate.browse(targetQueue, (Session session, QueueBrowser browser) ->{
+//            Enumeration enumeration = browser.getEnumeration();
+//            int counter = 0;
+//            while (enumeration.hasMoreElements()) {
+//               Message message = (Message) enumeration.nextElement();
+//               counter += 1;
+//               String uuid = message.getStringProperty("UUID");
+//               this.counter.sentUUIDs.remove(uuid);
+//            }
+//            return counter;
+//         });
          this.counter.sentUUIDs.entrySet().stream()
              .forEach(e->log.info("Message missing: {} - {}",e.getKey(),e.getValue()));
 
@@ -220,47 +208,6 @@ public class TransactionFailoverFuse implements CommandLineRunner {
          applicationContext.close();
       }
    }
-
-
-
-
-   /**
-    * Process a message and send to target queue - this is used by JmsListeners
-    */
-   public void doReceiveMessage(String text, Session session, String counter, String UUID) throws InterruptedException {
-//
-//      //Increase counters and uuid set
-//      log.debug("Received: {} - {}", UUID, counter);
-//      receiveCounter.incrementAndGet();
-//      if (receivedUUIDs.put(UUID,counter) != null) {
-//         log.warn("Received again: {} - {}", UUID, counter);
-//      }
-//
-//      //Send message to target queue
-//      if (receiveForwardEnabled) {
-//         Thread.sleep(delayBeforeForward);
-//
-//         jmsTemplate.convertAndSend(targetQueue, text, m -> {
-//            m.setStringProperty("SEND_COUNTER", counter);
-//            m.setStringProperty("UUID", UUID);
-//            if (addAmqDuplId) {
-//               m.setStringProperty("_AMQ_DUPL_ID", UUID);
-//            }
-//            return m;
-//         });
-//         log.debug("Forwarded: {} - {}", UUID, counter);
-//         receiveForwardedCounter.incrementAndGet();
-//      }
-//
-//      //Optionally throw exception to test transaction boundaries
-//      if (throwException) {
-//         throw new RuntimeException("Exception for uuid:" + UUID);
-//      }
-//
-//      Thread.sleep(delayBeforeDone);
-//      log.debug("Done: {} - {}", UUID, counter);
-   }
-
 
 
 }
