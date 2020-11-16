@@ -138,8 +138,8 @@ Notes:
 
 * A TransactionManager is created and used automatically
 * Consumers are cached to increase performance
-* Receive: A JMS session is created and cached by DefaultMessageListenerContainer for all receives. Receive is only transacted if `DefaultJmsListenerContainerFactory.setSessionTransacted(true)`.
-* Send: Another (transacted) JMS session from the TransactionManager is used - from JmsTemplate. So the send and receive is not done in the same JMS session - nor in the same transaction
+* Receive: A JMS session is created and cached by DefaultMessageListenerContainer for all receives.
+* Send: Another (transacted) JMS session from the TransactionManager is used. So the send and receive is not done in the same JMS session - nor in the same transaction
 
 Outcome:
 
@@ -156,8 +156,10 @@ transaction.propagation = PROPAGATION_NOT_SUPPORTED
 Notes:
 
 * Manually created TransactionManager
-* TransactionPolicy is created with PROPAGATION_NOT_SUPPORTED so the send doesn't participate in the transaction.
+* TransactionPolicy is created with `PROPAGATION_NOT_SUPPORTED` so the send doesn't participate in the transaction.
+* With `PROPAGATION_REQUIRED` this matched the previous scenario
 
 Outcome:
 
-* No message loss, no DLQ messages.
+* No message loss, no DLQ messages
+* Message duplicates do happen, but they are silently ignored by the broker.
