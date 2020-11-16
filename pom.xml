@@ -1,0 +1,207 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Licensed to the Apache Software Foundation (ASF) under one
+or more contributor license agreements.  See the NOTICE file
+distributed with this work for additional information
+regarding copyright ownership.  The ASF licenses this file
+to you under the Apache License, Version 2.0 (the
+"License"); you may not use this file except in compliance
+with the License.  You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing,
+software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied.  See the License for the
+specific language governing permissions and limitations
+under the License.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+   <modelVersion>4.0.0</modelVersion>
+
+   <groupId>bszeti.artemis-test</groupId>
+   <artifactId>fuse-transaction-failover-amqp</artifactId>
+   <version>1.0.0-SNAPSHOT</version>
+   <packaging>jar</packaging>
+   <name>ActiveMQ Artemis JMS Transaction Failover Example with Fuse</name>
+
+   <properties>
+      <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+      <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+      <maven.compiler.source>1.8</maven.compiler.source>
+      <maven.compiler.target>1.8</maven.compiler.target>
+      <!-- Point this to your real ARTEMIS_HOME. E.g.: mvn clean install -Dactivemq.basedir=/Users/bszeti/tools/amq-broker-7.7.0 -->
+      <activemq.basedir>${project.basedir}/..</activemq.basedir>
+
+      <fuse.version>7.7.0.fuse-sb2-770010-redhat-00001</fuse.version>
+
+<!--      <springboot.version>2.1.5.RELEASE</springboot.version>-->
+<!--      <springboot.version>2.1.18.RELEASE</springboot.version>-->
+<!--      <springboot.version>2.2.11.RELEASE</springboot.version>-->
+<!--      <springboot.version>2.3.5.RELEASE</springboot.version>-->
+      <artemis.version>2.13.0</artemis.version>
+
+      <!-- if enabled, the servers are not created or managed -->
+      <noServer>false</noServer>
+   </properties>
+
+   <dependencyManagement>
+      <dependencies>
+         <dependency>
+            <groupId>org.jboss.redhat-fuse</groupId>
+            <artifactId>fuse-springboot-bom</artifactId>
+            <version>${fuse.version}</version>
+            <type>pom</type>
+            <scope>import</scope>
+         </dependency>
+      </dependencies>
+   </dependencyManagement>
+
+
+   <dependencies>
+      <dependency>
+         <groupId>org.apache.camel</groupId>
+         <artifactId>camel-spring-boot-starter</artifactId>
+      </dependency>
+<!--      <dependency>-->
+<!--         <groupId>org.springframework.boot</groupId>-->
+<!--         <artifactId>spring-boot-starter-web</artifactId>-->
+<!--         <exclusions>-->
+<!--            <exclusion>-->
+<!--               <groupId>org.springframework.boot</groupId>-->
+<!--               <artifactId>spring-boot-starter-tomcat</artifactId>-->
+<!--            </exclusion>-->
+<!--         </exclusions>-->
+<!--      </dependency>-->
+<!--      <dependency>-->
+<!--         <groupId>org.springframework.boot</groupId>-->
+<!--         <artifactId>spring-boot-starter-undertow</artifactId>-->
+<!--      </dependency>-->
+      <dependency>
+         <groupId>org.apache.camel</groupId>
+         <artifactId>camel-amqp</artifactId>
+      </dependency>
+
+      <dependency>
+         <groupId>org.apache.activemq</groupId>
+         <artifactId>artemis-cli</artifactId>
+         <version>${artemis.version}</version>
+      </dependency>
+
+      <dependency>
+         <groupId>org.messaginghub</groupId>
+         <artifactId>pooled-jms</artifactId>
+      </dependency>
+   </dependencies>
+
+   <build>
+      <plugins>
+         <plugin>
+            <groupId>org.apache.activemq</groupId>
+            <artifactId>artemis-maven-plugin</artifactId>
+            <version>${artemis.version}</version>
+            <executions>
+               <execution>
+                  <id>create0</id>
+                  <goals>
+                     <goal>create</goal>
+                  </goals>
+                  <configuration>
+                     <instance>${basedir}/target/server0</instance>
+                     <configuration>${basedir}/target/classes/activemq/server0</configuration>
+                     <javaOptions>-Dorg.slf4j.simpleLogger.logFile=server0.log</javaOptions>
+                  </configuration>
+               </execution>
+               <execution>
+                  <id>create1</id>
+                  <goals>
+                     <goal>create</goal>
+                  </goals>
+                  <configuration>
+                     <instance>${basedir}/target/server1</instance>
+                     <configuration>${basedir}/target/classes/activemq/server1</configuration>
+                     <javaOptions>-Dorg.slf4j.simpleLogger.logFile=server1.log</javaOptions>
+                  </configuration>
+               </execution>
+               <execution>
+                  <id>runClient</id>
+                  <goals>
+                     <goal>runClient</goal>
+                  </goals>
+                  <configuration>
+                     <clientClass>bszeti.artemis.test.TransactionFailoverFuse</clientClass>
+                     <args>
+                        <param>${basedir}/target/server0</param>
+                        <param>${basedir}/target/server1</param>
+                        <param>${noServer}</param>
+                     </args>
+
+                  </configuration>
+               </execution>
+            </executions>
+            <dependencies>
+               <dependency>
+                  <groupId>${project.groupId}</groupId>
+                  <artifactId>${project.artifactId}</artifactId>
+                  <version>${project.version}</version>
+               </dependency>
+            </dependencies>
+         </plugin>
+         <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-clean-plugin</artifactId>
+         </plugin>
+      </plugins>
+   </build>
+
+   <profiles>
+      <profile>
+         <!-- specify -PnoServer if you don't want to start the servers on the tests -->
+         <id>noServer</id>
+         <properties>
+            <noServer>true</noServer>
+         </properties>
+      </profile>
+
+      <profile>
+         <!-- specify -PnoClient if you don't want to run the client part -->
+         <id>noClient</id>
+         <properties>
+            <noClient>true</noClient>
+         </properties>
+      </profile>
+
+      <profile>
+         <!-- the profile release won't execute anything. just compile and whatever else is needed -->
+         <id>noRun</id>
+         <properties>
+            <noServer>true</noServer>
+            <noClient>true</noClient>
+         </properties>
+      </profile>
+   </profiles>
+
+
+   <repositories>
+      <repository>
+         <id>apache.snapshots</id>
+         <name>Apache Development Snapshot Repository</name>
+         <url>https://repository.apache.org/content/repositories/snapshots/</url>
+         <snapshots>
+            <enabled>true</enabled>
+         </snapshots>
+      </repository>
+   </repositories>
+   <pluginRepositories>
+      <pluginRepository>
+         <id>apache.snapshots</id>
+         <name>Apache Development Snapshot Repository</name>
+         <url>https://repository.apache.org/content/repositories/snapshots/</url>
+         <snapshots>
+            <enabled>true</enabled>
+         </snapshots>
+      </pluginRepository>
+   </pluginRepositories>
+</project>

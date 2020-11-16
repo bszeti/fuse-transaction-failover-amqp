@@ -1,0 +1,146 @@
+= Test Artemis broker failover with SpringBoot and Qpid JMS
+
+This example tests an HA broker failover while a SpringBoot application actively receives and sends messags to the broker. 
+On the client side we use the Qpid JMS client for Artemis AMQP endpoint.
+
+To run the example we need Apache Artemis donwloaded and set its path in the `activemq.basedir` propety for Maven. For example:
+
+`export ARTEMIS_HOME=/Users/bszeti/tools/amq-broker-7.7.0`
+
+Then we can run the test - with sending the log into `out.log` - like this (see `run.sh`):
+```
+export "MAVEN_OPTS=-Dorg.slf4j.simpleLogger.log.org.apache.activemq.artemis.jms.example=info"
+export "MAVEN_OPTS=$MAVEN_OPTS -Dorg.slf4j.simpleLogger.showDateTime=true -Dorg.slf4j.simpleLogger.showThreadName=true"
+export "MAVEN_OPTS=$MAVEN_OPTS -Dorg.slf4j.simpleLogger.logFile=out.log"
+mvn clean install -Dactivemq.basedir=$ARTEMIS_HOME
+```
+
+[NOTE]
+====
+Sending all the logs to stdout looks messy, logging to `out.log` was just a quick workaround and it's beneficial when debug/trace is enabled.
+====
+
+The application is a simple JMS bridge that moves messages from a "source" queue to a "target" queue in a transacted way. The goal would be to achieve a seamless failover without lost or extra messages.
+
+Steps:
+
+- Two broker instances are started in HA mode with shared storage. The brokers' `max-delivery-attempts` is 7.
+- The application uses the Qpid JMS AMQP client with the following connection string:
+
+  `failover:(amqp://localhost:61616,amqp://localhost:61617)?failover.maxReconnectAttempts=16&jms.prefetchPolicy.all=5&jms.forceSyncSend=true`
+
+- `org.messaginghub:pooled-jms` connection pool is used with 1 connection.
+- First we send messages to our "source" queue (see property `send.count`),
+- A unique `UUID` header is added to all messages. These are added later as `_AMQ_DUPL_ID` header when they are sent to the target queue to utilize Artemis Duplicate Detection.
+- Then the JMS consumers (`receive.concurrentConsumers`) are started.
+- Messages are consumed transacted and sent to a `target` queue.
+- After 10% of the messages the broker failover is triggered. The JMS clients automatically reconnect to process the rest of the messages.
+- The application is shut down when no more messages are received from `source`. Before that messages are counted on the queues.
+
+Expected outcome:
+- All the messages are moved to the `target` queue witohut message loss or duplicates.
+
+See `application.properties` for parameters:
+
+.application.properties
+[options="header",width="100%",align="center"]
+|===
+|Parameter |Example | Notes
+|connection.type              |AMQP or CORE|ConnectionFactory type
+|connection.remoteUrl         |         |Connection string to broker - must match type
+|connection.maxConnections    |1        |Pool size
+|send.count                   |1000     |Message count
+|send.enabled                 |true     |Send messages to `source` queue
+|transaction.mode             |DEFAULT_MESSAGE_LISTENER_CONTAINER or JMS_TRANSACTION_MANAGER| See modes below
+|receive.enabled              |true     |Receive messages from source queue
+|receive.concurrentConsumers  |20       |Consumers
+|receive.forwardEnable        |true     |Forward messaged to `target` queue
+|receive.addAmqDuplId         |true     |Add _AMQ_DUPL_ID header
+|receive.throwException       |false    |Throw exception during message - test transactions
+|receive.delayBeforeForward   |0        |Optional delay (ms)
+|receive.delayBeforeDone      |0        |Optional delay (ms)
+|receive.cacheLevel           |CACHE_NONE or CACHE_CONSUMER| Only for JMS_TRANSACTION_MANAGER
+|brokerFailover               |true     |Do broker failover during test
+|counterUpdate                |1000     |Log counters frequency (ms)
+|shutDownDelay                |10000    |Wait before shutdown (ms)
+|===
+
+
+See summary output of the application:
+```
+17252 [main] [INFO] TransactionFailoverSpringBoot - Message count before listener start - sent: 1000, received: 0, forwarded: 0
+19486 [main] [INFO] TransactionFailoverSpringBoot - Message count after failover - sent: 1000, received: 125, forwarded: 119
+34661 [main] [INFO] TransactionFailoverSpringBoot - Message count at the end - sent: 1000, received: 1015, forwarded: 1015
+34661 [main] [INFO] TransactionFailoverSpringBoot - Message count on source queue: 0
+34661 [main] [INFO] TransactionFailoverSpringBoot - Message count on target queue: 1000
+34661 [main] [WARNING] TransactionFailoverSpringBoot - Message count on DLQ - duplicates: 6
+```
+
+The missing or DLQ message ids are also logged with their UUID and order number:
+```
+34658 [main] [INFO] TransactionFailoverSpringBoot - Message in DLQ: 5e213243-d579-4db7-9ef3-a5233e3fad63 - 128
+34658 [main] [INFO] TransactionFailoverSpringBoot - Message missing:: bd1ec840-909d-41db-a51a-e160d83a09b5 - 129
+```
+
+The example application creates and starts two Artemis server instances by default under `target/server0` and `target/server1` directories. Use the _noServer_ Maven profile (`mvn -PnoSever clean install`) to skip this, so you need to start one or two a broker instances yourself.
+
+== Different scenarios to try
+
+Some issues were found with all of these settings. It's not clear how the expected outcome could be achieved with Spring framework and Qpid JMS client.
+
+[NOTE]
+====
+Using Artemis Core protocol seems to solve the issues described below. `connection.type=CORE`
+====
+
+=== Default DefaultMessageListenerContainer
+```
+transaction.mode = DEFAULT_MESSAGE_LISTENER_CONTAINER
+```
+Notes:
+
+* No TransactionManager is used. Transactions are managed by the `DefaultMessageListenerContainer`
+* `receive.cacheLevel` is ignored in this case, but it's automatically set to `CACHE_CONSUMER`
+* Receive: A transacted JMS session is created and cached by DefaultMessageListenerContainer.
+* Send: Send is using the same session as receive.
+
+Outcome:
+
+* Masseges on DLQ. Messages are redelivered despite they were already sent to target queue (see https://issues.redhat.com/browse/ENTMQCL-2339). Because of transacted send the duplicate exception reaches the client and causes message redelivery until _max-delivery-attempts_ is reached and the broker drops the message on the DLQ. (see https://issues.redhat.com/browse/ENTMQBR-4235)
+* Many errors and retries based on the logs
+* Sometimes the test execution takes much longer, it had to wait for transaction timeouts on the broker side probably
+
+=== TransactionManager with no caching
+```
+transaction.mode = JMS_TRANSACTION_MANAGER
+receive.cacheLevel = CACHE_NONE
+```
+
+Notes:
+
+* A TransactionManager is created and used by the `DefaultMessageListenerContainer`
+* CACHE_AUTO also means CACHE_NONE by default if a TransactionManager is set
+* Receive: The new transacted JMS session is created by TransactionManager for each message.
+* Send: Send uses the same - transacted - session as receive
+
+Outcome:
+
+* Messages on DLQ messages. Less, but similar than in the previous scenario. 
+* Slower as there is no caching
+
+
+=== TransactionManager with caching
+```
+transaction.mode = JMS_TRANSACTION_MANAGER
+receive.cacheLevel = CACHE_CONSUMER
+```
+
+Notes:
+
+* A TransactionManager is created and used by the `DefaultMessageListenerContainer`
+* Receive: A JMS session is created and cached by DefaultMessageListenerContainer for all receives. Receive is only transacted if `DefaultJmsListenerContainerFactory.setSessionTransacted(true)`.
+* Send: Another (transacted) JMS session from the TransactionManager is used - from JmsTemplate. So the send and receive is not done in the same JMS session - nor in the same transaction
+
+Outcome:
+
+* Message loss during failover.
