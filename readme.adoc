@@ -27,7 +27,7 @@ Steps:
 - Two broker instances are started in HA mode with shared storage. The brokers' `max-delivery-attempts` is 7.
 - The application uses the Qpid JMS AMQP client with the following connection string:
 
-  `failover:(amqp://localhost:61616,amqp://localhost:61617)?failover.maxReconnectAttempts=16&jms.prefetchPolicy.all=5&jms.forceSyncSend=true`
+  failover:(amqp://localhost:61616,amqp://localhost:61617)?failover.maxReconnectAttempts=16&jms.prefetchPolicy.all=5&jms.forceSyncSend=true
 
 - `org.messaginghub:pooled-jms` connection pool is used with 1 connection.
 - First we send messages to our "source" queue (see property `send.count`),
@@ -93,7 +93,7 @@ Some issues were found with all of these settings. It's not clear how the expect
 Using Artemis Core protocol seems to solve some of the issues described below. `connection.type=CORE`
 ====
 
-=== Default DefaultMessageListenerContainer
+=== No Transaction Manager - `lazyCreateTransactionManager=false`
 ```
 transaction.mode = NO_TRANSACTION_MANAGER
 receive.cacheLevel = CACHE_CONSUMER
@@ -130,7 +130,7 @@ Outcome:
 * Works well with CORE, no duplicates
 
 
-=== TransactionManager with caching
+=== Auto-created TransactionManager with caching
 ```
 transaction.mode = LAZY_TRANSACTION_MANAGER
 receive.cacheLevel = CACHE_CONSUMER
