@@ -138,14 +138,14 @@ public class Routes extends RouteBuilder {
             ;
         }
 
-        if (transactionMode.equals("TRANSACTION_MANAGER_WITH_PROPAGATION")) {
+        if (transactionMode.equals("LAZY_TRANSACTION_MANAGER")) {
             from("amqp:queue:{{source.queue}}?concurrentConsumers={{receive.concurrentConsumers}}&transacted={{receive.transacted}}&cacheLevelName={{receive.cacheLevel}}")
                 .routeId("jms.receive").autoStartup(false)
                 .to("direct:doReceive")
             ;
         }
 
-        if (transactionMode.equals("LAZY_TRANSACTION_MANAGER")) {
+        if (transactionMode.equals("TRANSACTION_MANAGER_WITH_PROPAGATION")) {
             from("amqp:queue:{{source.queue}}?concurrentConsumers={{receive.concurrentConsumers}}&transacted={{receive.transacted}}&cacheLevelName={{receive.cacheLevel}}&transactionManager=#myJmsTransactionManager")
                 .routeId("jms.receive").autoStartup(false)
                 .transacted("jmsSendTransaction")

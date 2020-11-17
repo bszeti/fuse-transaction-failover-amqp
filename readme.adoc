@@ -102,13 +102,14 @@ Notes:
 
 * No TransactionManager is used. Transactions are managed by Spring's `DefaultMessageListenerContainer`
 * Receive: A transacted JMS session is created and cached by DefaultMessageListenerContainer.
-* Send: Send is using the same session as receive.
+* Send: Send is using the same session and transaction as receive.
 
 Outcome:
 
-* Masseges on DLQ. Messages are redelivered despite they were already sent to target queue (see https://issues.redhat.com/browse/ENTMQCL-2339). Because of transacted send the duplicate exception reaches the client and causes message redelivery until _max-delivery-attempts_ is reached and the broker drops the message on the DLQ. (see https://issues.redhat.com/browse/ENTMQBR-4235)
+* Masseges on DLQ with AMQP. Messages are redelivered despite they were already sent to target queue (see https://issues.redhat.com/browse/ENTMQCL-2339). Because of transacted send the duplicate exception reaches the client and causes message redelivery until _max-delivery-attempts_ is reached and the broker drops the message on the DLQ. (see https://issues.redhat.com/browse/ENTMQBR-4235)
 * Many errors and retries based on the logs
 * Sometimes the test execution takes much longer, it had to wait for transaction timeouts on the broker side probably
+* Works well with CORE, no duplicates
 
 === Auto-created TransactionManager without caching
 ```
@@ -120,12 +121,13 @@ Notes:
 
 * A TransactionManager is created and used automatically
 * Receive: The new transacted JMS session is created by TransactionManager for each message.
-* Send: Send uses the same - transacted - session as receive
+* Send: Send uses the same session and transaction as receive
 
 Outcome:
 
-* Messages on DLQ messages. Less, but similar than in the previous scenario. 
+* Messages on DLQ messages with AMQP. Less, but similar than in the previous scenario.
 * Slower as there is no caching
+* Works well with CORE, no duplicates
 
 
 === TransactionManager with caching
@@ -143,7 +145,7 @@ Notes:
 
 Outcome:
 
-* Message loss during failover.
+* Message loss during failover with AMQP
 * Rare message loss was observed even with the CORE protocol
 
 === TransactionManager with non-transacted send
@@ -162,7 +164,7 @@ Notes:
 Outcome:
 
 * No message loss, no DLQ messages
-* Message duplicates do happen, but they are silently ignored by the broker.
+* Message duplicates do happen, but they are silently ignored by the broker, so it's fine.
 
 === SJMS with transacted send
 ```
@@ -172,11 +174,12 @@ transaction.mode = SJMS
 Notes:
 
 * Using a non-pooled connection factory, the component takes care of that
+* Receive and send is in the same transaction.
 
 Outcome:
 
-* DLQ messages cause by duplicates.
-* Works with CORE or non-transacted send
+* DLQ messages caused by duplicates with AMQP
+* Works with CORE or non-transacted send (simply use `transacted=false` on send)
 
 == Summary
 
@@ -184,4 +187,4 @@ The Qpid JMS client seems to have an issue that causes duplicates during broker 
 If we have to use AMQP, then we need to make sure that the _send_ is non-transacted to avoid these duplicates causing an exception on the client side and eventually messages on DLQ - https://issues.redhat.com/browse/ENTMQBR-4235.
 
 The _camel-jms_ component with `CACHE_CONSUMER` enabled doing transacted receive and send seems to loose messages both with AMQP and CORE ConnectionFactory.
-The _camel-sjms_ component seemd work fine, so best setup is probably to use _camel-sjms_ with _CORE_ protocol.
+The _camel-sjms_ component seems to work fine, so best setup is probably to use _camel-sjms_ with _CORE_ protocol (even without duplicate detection).

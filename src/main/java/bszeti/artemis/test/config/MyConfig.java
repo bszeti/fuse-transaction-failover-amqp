@@ -4,7 +4,6 @@ import java.util.concurrent.CountDownLatch;
 
 import javax.jms.ConnectionFactory;
 
-import bszeti.artemis.test.routes.Routes;
 import org.apache.camel.component.sjms.SjmsComponent;
 import org.apache.camel.spring.spi.SpringTransactionPolicy;
 import org.slf4j.Logger;
@@ -51,6 +50,7 @@ public class MyConfig {
 	public SjmsComponent sjms(@Autowired ConnectionFactoryConfig connectionFactoryConfig){
 		SjmsComponent sjmsComponent = new SjmsComponent();
 		sjmsComponent.setConnectionFactory(connectionFactoryConfig.singleConnectionFactory());
+		sjmsComponent.setConnectionCount(connectionFactoryConfig.getMaxConnections());
 		return sjmsComponent;
 
 	}
