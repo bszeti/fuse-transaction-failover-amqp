@@ -125,9 +125,8 @@ public class TransactionFailoverFuse implements CommandLineRunner {
             Thread.sleep(1000);
             log.info("Start receiving");
 
-            camelContext.startRoute("receive");
-
             log.info("Message count before listener start - sent: {}, received: {}, forwarded: {}", counter.getSendCounter().get(), counter.getReceiveCounter().get(), counter.getReceiveForwardedCounter().get());
+            camelContext.startRoute("jms.receive");
 
             //Wait until we received 10% of messages before trigger broker failover
             while (counter.getReceiveCounter().get() < counter.getSendCounter().get()/10) {
@@ -154,22 +153,14 @@ public class TransactionFailoverFuse implements CommandLineRunner {
          jmsTemplate.setReceiveTimeout(1000);
          Message msg;
 
-         //Source queue is expectd not to have any messages
+         //Source queue is expected not to have any messages
          int sourceCount = 0;
          while((msg = jmsTemplate.receive(sourceQueue)) != null) {
             sourceCount++;
          }
 
-         //Check successfully arrived messages
-         int targetCount = 0;
-         while((msg = jmsTemplate.receive(targetQueue)) != null) {
-            targetCount++;
-            String uuid = msg.getStringProperty("UUID");
-            this.counter.sentUUIDs.remove(uuid);
-         }
-
-         //Browse may not give back the exact number - but leaving here for reference
-//         int targetCount = jmsTemplate.browse(targetQueue, (Session session, QueueBrowser browser) ->{
+         //Browse may not give back the exact number with CORE - but leaving code here for reference
+//         int targetBrowserCount = jmsTemplate.browse(targetQueue, (Session session, QueueBrowser browser) ->{
 //            Enumeration enumeration = browser.getEnumeration();
 //            int counter = 0;
 //            while (enumeration.hasMoreElements()) {
@@ -180,21 +171,39 @@ public class TransactionFailoverFuse implements CommandLineRunner {
 //            }
 //            return counter;
 //         });
+
+         //Check successfully arrived messages on target
+         int targetCount = 0;
+         while((msg = jmsTemplate.receive(targetQueue)) != null) {
+            targetCount++;
+            String uuid = msg.getStringProperty("UUID");
+            this.counter.sentUUIDs.remove(uuid);
+         }
+
+
          this.counter.sentUUIDs.entrySet().stream()
              .forEach(e->log.info("Message missing: {} - {}",e.getKey(),e.getValue()));
 
 
          //Check messages on DLQ
-         int DLQCount = jmsTemplate.browse("DLQ", (Session session, QueueBrowser browser) ->{
-            Enumeration enumeration = browser.getEnumeration();
-            int counter = 0;
-            while (enumeration.hasMoreElements()) {
-               Message dlqMsg = (Message) enumeration.nextElement();
-               log.info("Message in DLQ: {} - {}",dlqMsg.getStringProperty("UUID"), dlqMsg.getStringProperty("SEND_COUNTER"));
-               counter += 1;
-            }
-            return counter;
-         });
+//         int DLQCount = jmsTemplate.browse("DLQ", (Session session, QueueBrowser browser) ->{
+//            Enumeration enumeration = browser.getEnumeration();
+//            int counter = 0;
+//            while (enumeration.hasMoreElements()) {
+//               Message dlqMsg = (Message) enumeration.nextElement();
+//               log.info("Message in DLQ: {} - {}",dlqMsg.getStringProperty("UUID"), dlqMsg.getStringProperty("SEND_COUNTER"));
+//               counter += 1;
+//            }
+//            return counter;
+//         });
+
+         int DLQCount = 0;
+         while((msg = jmsTemplate.receive("DLQ")) != null) {
+            DLQCount++;
+            String uuid = msg.getStringProperty("UUID");
+            this.counter.sentUUIDs.remove(uuid);
+            log.info("Message in DLQ: {} - {}",msg.getStringProperty("UUID"), msg.getStringProperty("SEND_COUNTER"));
+         }
 
          log.info("Message count at the end - sent: {}, received: {}, forwarded: {}", counter.getSendCounter().get(), counter.getReceiveCounter().get(), counter.getReceiveForwardedCounter().get());
          log.info("Message count on source queue: {}", sourceCount);

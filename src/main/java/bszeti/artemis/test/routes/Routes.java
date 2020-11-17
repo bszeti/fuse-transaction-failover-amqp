@@ -32,6 +32,9 @@ public class Routes extends RouteBuilder {
     @Value("${receive.addAmqDuplId}")
     Boolean addAmqDuplId;
 
+    @Value("${transaction.mode}")
+    String transactionMode;
+
 
     @Override
     public void configure() throws Exception {
@@ -56,11 +59,6 @@ public class Routes extends RouteBuilder {
                 return null;
             })
 
-            .choice()
-                .when(simple("${body} contains 'error' "))
-                .throwException(Exception.class, "error - ${header.UUID}")
-            .end()
-
 
             .choice()
                 .when(constant("{{receive.forwardEnabled}}"))
@@ -69,17 +67,21 @@ public class Routes extends RouteBuilder {
                     if (addAmqDuplId) return m.getHeader("UUID");
                     return null;
                 })
-                .to("{{receive.forwardEndpoint}}")
+                .to("direct:forward")
                 .log(LoggingLevel.DEBUG, log, "Forwarded: ${header.UUID} - ${header.SEND_COUNTER}")
                 .process(e-> counter.getReceiveForwardedCounter().incrementAndGet())
                 .end()
             .end()
 
+            //Throw exception after forward so we can test transacted send
+            .choice()
+                .when(simple("${body} contains 'error' "))
+                .throwException(Exception.class, "error - ${header.UUID}")
+            .end()
+
             .delay(constant("{{receive.delayBeforeDone}}"))
             .log(LoggingLevel.DEBUG, log, "Done: ${header.UUID} - ${header.SEND_COUNTER}")
         ;
-
-
 
 
         // Send messages -  send.threads * send.count
@@ -99,7 +101,7 @@ public class Routes extends RouteBuilder {
                         .setHeader("SEND_COUNTER").exchange(e->counter.getSendCounter().incrementAndGet())
                         .setBody(simple(sendMessage))
                         .log(LoggingLevel.DEBUG, log, "Sending: ${header.UUID} - ${header.SEND_COUNTER}")
-                        .to("{{send.endpoint}}?transacted=false")
+                        .to("direct:send")
                         .script().message(m->counter.getSentUUIDs().put(m.getHeader("UUID").toString(),m.getHeader("SEND_COUNTER").toString()))
                         .delay(constant("{{send.delay}}"))
                     .end()
@@ -108,6 +110,55 @@ public class Routes extends RouteBuilder {
             .log(LoggingLevel.INFO, log, "Total sent: {{send.count}} - ${header.sentUUIDsSize}")
 
         ;
+
+        //Send and forward
+        if (transactionMode.startsWith("SJMS")) {
+            from("direct:send").routeId("jms.send")
+                .to("sjms:queue:{{source.queue}}?transacted=false");
+
+            //With SJMS Forward is non-transacted by default
+            from("direct:forward").routeId("jms.forward")
+                .to("sjms:queue:{{target.queue}}?transacted=true");
+
+        } else {
+
+            from("direct:send").routeId("jms.send")
+                .to("amqp:queue:{{source.queue}}?transacted=false");
+
+            //Forward is transacted if receive was transacted unless PROPAGATION_NOT_SUPPORTED
+            from("direct:forward").routeId("jms.forward")
+                .to("amqp:queue:{{target.queue}}");
+        }
+
+        //Receive
+        if (transactionMode.equals("NO_TRANSACTION_MANAGER")) {
+            from("amqp:queue:{{source.queue}}?concurrentConsumers={{receive.concurrentConsumers}}&transacted={{receive.transacted}}&cacheLevelName={{receive.cacheLevel}}&lazyCreateTransactionManager=false")
+                .routeId("jms.receive").autoStartup(false)
+                .to("direct:doReceive")
+            ;
+        }
+
+        if (transactionMode.equals("TRANSACTION_MANAGER_WITH_PROPAGATION")) {
+            from("amqp:queue:{{source.queue}}?concurrentConsumers={{receive.concurrentConsumers}}&transacted={{receive.transacted}}&cacheLevelName={{receive.cacheLevel}}")
+                .routeId("jms.receive").autoStartup(false)
+                .to("direct:doReceive")
+            ;
+        }
+
+        if (transactionMode.equals("LAZY_TRANSACTION_MANAGER")) {
+            from("amqp:queue:{{source.queue}}?concurrentConsumers={{receive.concurrentConsumers}}&transacted={{receive.transacted}}&cacheLevelName={{receive.cacheLevel}}&transactionManager=#myJmsTransactionManager")
+                .routeId("jms.receive").autoStartup(false)
+                .transacted("jmsSendTransaction")
+                .to("direct:doReceive")
+            ;
+        }
+
+        if (transactionMode.equals("SJMS")) {
+            from("sjms:queue:{{source.queue}}?transacted={{receive.transacted}}&consumerCount={{receive.concurrentConsumers}}")
+                .routeId("jms.receive").autoStartup(false)
+                .to("direct:doReceive")
+            ;
+        }
 
         /**
          * Log message counters. It also updates receiveCounterLast, which is needed to shut down after all messages are received.

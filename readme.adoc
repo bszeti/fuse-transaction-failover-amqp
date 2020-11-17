@@ -163,3 +163,25 @@ Outcome:
 
 * No message loss, no DLQ messages
 * Message duplicates do happen, but they are silently ignored by the broker.
+
+=== SJMS with transacted send
+```
+transaction.mode = SJMS
+```
+
+Notes:
+
+* Using a non-pooled connection factory, the component takes care of that
+
+Outcome:
+
+* DLQ messages cause by duplicates.
+* Works with CORE or non-transacted send
+
+== Summary
+
+The Qpid JMS client seems to have an issue that causes duplicates during broker failover despite having transacted send.
+If we have to use AMQP, then we need to make sure that the _send_ is non-transacted to avoid these duplicates that usually go to DLQ - because of causing a client side exception.
+
+The `camel-jms` component using `CACHE_CONSUMER` and doing transacted receive and send seems to loose messages both with AMQP and CORE ConnectionFactory.
+The `camel-sjms` component doesn't seem to have this problem, so best setup is probably to use `camel-sjms` with CORE protocol.

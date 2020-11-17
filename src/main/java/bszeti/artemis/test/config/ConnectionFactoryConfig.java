@@ -21,7 +21,7 @@ public class ConnectionFactoryConfig {
     private Integer maxConnections;
 
 
-    //AMQP connection factory
+    //AMQP ConnectionFactory
     public ConnectionFactory amqpConnectionFactory(){
         JmsConnectionFactory factory = new JmsConnectionFactory(remoteUrl);
 
@@ -35,6 +35,7 @@ public class ConnectionFactoryConfig {
         return factory;
     }
 
+    //CORE ConnectionFactory
     public ConnectionFactory coreConnectionFactory(){
         ActiveMQConnectionFactory factory = new ActiveMQConnectionFactory(remoteUrl);
 
@@ -48,9 +49,8 @@ public class ConnectionFactoryConfig {
         return factory;
     }
 
-    @Bean
-    public ConnectionFactory pooledConnectionFactory() {
-
+    //Non-pooled ConnectionFactory - used by SJMS
+    public ConnectionFactory singleConnectionFactory() {
         ConnectionFactory cf = null;
         switch (this.getType()) {
             case "AMQP":
@@ -60,9 +60,14 @@ public class ConnectionFactoryConfig {
                 cf = coreConnectionFactory();
                 break;
         }
+        return cf;
+    }
 
+    //Pooled ConnectionFactory - autowired by AMQP
+    @Bean
+    public ConnectionFactory pooledConnectionFactory() {
         JmsPoolConnectionFactory jmsPoolConnectionFactory = new org.messaginghub.pooled.jms.JmsPoolConnectionFactory();
-        jmsPoolConnectionFactory.setConnectionFactory(cf);
+        jmsPoolConnectionFactory.setConnectionFactory(singleConnectionFactory());
         jmsPoolConnectionFactory.setMaxConnections(this.getMaxConnections());
         return jmsPoolConnectionFactory;
     }

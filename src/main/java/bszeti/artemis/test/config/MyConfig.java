@@ -5,6 +5,7 @@ import java.util.concurrent.CountDownLatch;
 import javax.jms.ConnectionFactory;
 
 import bszeti.artemis.test.routes.Routes;
+import org.apache.camel.component.sjms.SjmsComponent;
 import org.apache.camel.spring.spi.SpringTransactionPolicy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,5 +42,16 @@ public class MyConfig {
 		SpringTransactionPolicy transactionPolicy = new SpringTransactionPolicy(myJmsTransactionManager);
 		transactionPolicy.setPropagationBehaviorName(transactionPropagation);
 		return transactionPolicy;
+	}
+
+	@Bean
+	@ConditionalOnProperty(
+		value="transaction.mode",
+		havingValue = "SJMS")
+	public SjmsComponent sjms(@Autowired ConnectionFactoryConfig connectionFactoryConfig){
+		SjmsComponent sjmsComponent = new SjmsComponent();
+		sjmsComponent.setConnectionFactory(connectionFactoryConfig.singleConnectionFactory());
+		return sjmsComponent;
+
 	}
 }
