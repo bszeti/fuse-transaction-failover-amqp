@@ -51,13 +51,12 @@ See `application.properties` for parameters:
 |connection.maxConnections    |1        |Pool size
 |send.count                   |1000     |Message count
 |send.enabled                 |true     |Send messages to `source` queue
-|send.message                 |#{'$'}{header.UUID} - #{'$'}{header.SEND_COUNTER}|Exception is thrown if contains `error`
+|send.message                 |#{'$'}{header.UUID} - #{'$'}{header.SEND_COUNTER}|Exception is thrown if it contains `error`
 |transaction.mode             |NO_TRANSACTION_MANAGER or LAZY_TRANSACTION_MANAGER or TRANSACTION_MANAGER_WITH_PROPAGATION| See modes below
 |receive.enabled              |true     |Receive messages from source queue
 |receive.concurrentConsumers  |20       |Consumers
 |receive.forwardEnable        |true     |Forward messaged to `target` queue
 |receive.addAmqDuplId         |true     |Add _AMQ_DUPL_ID header
-|receive.throwException       |false    |Throw exception during message - test transactions
 |receive.delayBeforeForward   |0        |Optional delay (ms)
 |receive.delayBeforeDone      |0        |Optional delay (ms)
 |receive.cacheLevel           |CACHE_NONE or CACHE_CONSUMER|
