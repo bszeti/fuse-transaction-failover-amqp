@@ -177,7 +177,10 @@ public class TransactionFailoverFuse implements CommandLineRunner {
          while((msg = jmsTemplate.receive(targetQueue)) != null) {
             targetCount++;
             String uuid = msg.getStringProperty("UUID");
-            this.counter.sentUUIDs.remove(uuid);
+            String s = this.counter.sentUUIDs.remove(uuid);
+            if (s==null) {
+               log.warn("Message multiple times on target queue? {} - {}",uuid, msg.getStringProperty("_AMQ_DUPL_ID"));
+            }
          }
 
 
