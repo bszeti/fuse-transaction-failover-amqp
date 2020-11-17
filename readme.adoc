@@ -180,8 +180,8 @@ Outcome:
 
 == Summary
 
-The Qpid JMS client seems to have an issue that causes duplicates during broker failover despite having transacted send.
-If we have to use AMQP, then we need to make sure that the _send_ is non-transacted to avoid these duplicates that usually go to DLQ - because of causing a client side exception.
+The Qpid JMS client seems to have an issue that causes duplicates during broker failover (despite having transacted send) - https://issues.redhat.com/browse/ENTMQCL-2339.
+If we have to use AMQP, then we need to make sure that the _send_ is non-transacted to avoid these duplicates causing an exception on the client side and eventually messages on DLQ - https://issues.redhat.com/browse/ENTMQBR-4235.
 
-The `camel-jms` component using `CACHE_CONSUMER` and doing transacted receive and send seems to loose messages both with AMQP and CORE ConnectionFactory.
-The `camel-sjms` component doesn't seem to have this problem, so best setup is probably to use `camel-sjms` with CORE protocol.
+The _camel-jms_ component with `CACHE_CONSUMER` enabled doing transacted receive and send seems to loose messages both with AMQP and CORE ConnectionFactory.
+The _camel-sjms_ component seemd work fine, so best setup is probably to use _camel-sjms_ with _CORE_ protocol.
