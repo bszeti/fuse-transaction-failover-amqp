@@ -37,18 +37,17 @@ under the License.
 
       <fuse.version>7.7.0.fuse-sb2-770010-redhat-00001</fuse.version>
 
-<!--      <springboot.version>2.1.5.RELEASE</springboot.version>-->
-<!--      <springboot.version>2.1.18.RELEASE</springboot.version>-->
-<!--      <springboot.version>2.2.11.RELEASE</springboot.version>-->
-<!--      <springboot.version>2.3.5.RELEASE</springboot.version>-->
       <artemis.version>2.13.0</artemis.version>
+      <qpid-jms.version>0.55.0-SNAPSHOT</qpid-jms.version>
 
       <!-- if enabled, the servers are not created or managed -->
       <noServer>false</noServer>
+
    </properties>
 
    <dependencyManagement>
       <dependencies>
+
          <dependency>
             <groupId>org.jboss.redhat-fuse</groupId>
             <artifactId>fuse-springboot-bom</artifactId>
@@ -56,29 +55,39 @@ under the License.
             <type>pom</type>
             <scope>import</scope>
          </dependency>
+
+         <dependency>
+            <groupId>org.apache.qpid</groupId>
+            <artifactId>qpid-jms-client</artifactId>
+            <version>${qpid-jms.version}</version>
+            <exclusions>
+               <exclusion>
+                  <!-- New versions has OS specific classifier which doesn't exist in Red Hat repos yet -->
+                  <groupId>io.netty</groupId>
+                  <artifactId>netty-transport-native-kqueue</artifactId>
+               </exclusion>
+            </exclusions>
+         </dependency>
+
+
       </dependencies>
    </dependencyManagement>
 
 
    <dependencies>
       <dependency>
+         <groupId>org.apache.qpid</groupId>
+         <artifactId>qpid-jms-client</artifactId>
+      </dependency>
+      <dependency>
+         <groupId>io.netty</groupId>
+         <artifactId>netty-transport-native-kqueue</artifactId>
+      </dependency>
+
+      <dependency>
          <groupId>org.apache.camel</groupId>
          <artifactId>camel-spring-boot-starter</artifactId>
       </dependency>
-<!--      <dependency>-->
-<!--         <groupId>org.springframework.boot</groupId>-->
-<!--         <artifactId>spring-boot-starter-web</artifactId>-->
-<!--         <exclusions>-->
-<!--            <exclusion>-->
-<!--               <groupId>org.springframework.boot</groupId>-->
-<!--               <artifactId>spring-boot-starter-tomcat</artifactId>-->
-<!--            </exclusion>-->
-<!--         </exclusions>-->
-<!--      </dependency>-->
-<!--      <dependency>-->
-<!--         <groupId>org.springframework.boot</groupId>-->
-<!--         <artifactId>spring-boot-starter-undertow</artifactId>-->
-<!--      </dependency>-->
       <dependency>
          <groupId>org.apache.camel</groupId>
          <artifactId>camel-amqp</artifactId>
